@@ -269,7 +269,7 @@ describe('AuditService', () => {
 
   describe('proveEvent', () => {
     it('should provide proof for an event', async () => {
-      const event1 = await service.logEvent({
+      await service.logEvent({
         tenantId: 'tenant-1',
         actor: { type: ActorType.USER, id: 'user-1', tenantId: 'tenant-1' },
         category: EventCategory.SECURITY,

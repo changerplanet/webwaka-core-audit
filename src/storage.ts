@@ -75,7 +75,7 @@ export class InMemoryAuditStorage implements AuditStorage {
     const tenantEvents = this.eventsByTenant.get(input.tenantId) || [];
     
     // Apply filters
-    let filtered = tenantEvents.filter(record => {
+    const filtered = tenantEvents.filter(record => {
       const event = record.event;
       
       if (input.actorId && event.actor.id !== input.actorId) return false;
