@@ -1,6 +1,7 @@
 import { AuditService } from './audit-service';
 import { InMemoryAuditStorage } from './storage';
-import { ActorType, EventCategory, EventSeverity, CreateAuditEventInput } from './types';
+import { ActorType, EventCategory, EventSeverity, CreateAuditEventInput, AuditEvent } from './types';
+import { computeEventHash, verifyEventHash, computeChainHash, verifyChainIntegrity } from './hash-utils';
 
 describe('AuditService', () => {
   let service: AuditService;
@@ -354,6 +355,272 @@ describe('AuditService', () => {
       await expect(
         storage.appendEvent(event, 'fake-hash')
       ).rejects.toThrow('Event already exists');
+    });
+  });
+
+  describe('hard stop condition', () => {
+    it('module can emit audit event and later cryptographically prove integrity', async () => {
+      // This test proves the hard stop condition:
+      // "Any module can emit an audit event and later prove who did what,
+      // when, under which tenant context, and detect if the audit trail was tampered with."
+
+      const storage = new InMemoryAuditStorage();
+      const auditService = new AuditService({ storage });
+
+      // 1. Emit audit events from different actors
+      const userEvent = await auditService.logEvent({
+        tenantId: 'tenant-acme',
+        actor: { type: ActorType.USER, id: 'user-john', tenantId: 'tenant-acme' },
+        category: EventCategory.FINANCIAL,
+        severity: EventSeverity.INFO,
+        action: 'sale.created',
+        resource: 'sale:12345',
+        outcome: 'success',
+        details: { amount: 5000, currency: 'NGN' },
+        ipAddress: '192.168.1.100',
+      });
+
+      const systemEvent = await auditService.logEvent({
+        tenantId: 'tenant-acme',
+        actor: { type: ActorType.SYSTEM, id: 'system' },
+        category: EventCategory.SYSTEM,
+        severity: EventSeverity.INFO,
+        action: 'backup.completed',
+        outcome: 'success',
+      });
+
+      const serviceEvent = await auditService.logEvent({
+        tenantId: 'tenant-acme',
+        actor: { type: ActorType.SERVICE, id: 'payment-gateway', tenantId: 'tenant-acme' },
+        category: EventCategory.FINANCIAL,
+        severity: EventSeverity.INFO,
+        action: 'payment.processed',
+        resource: 'payment:67890',
+        outcome: 'success',
+        details: { transactionId: 'txn-abc123' },
+      });
+
+      // 2. Verify we can prove WHO did WHAT
+      expect(userEvent.actor.type).toBe(ActorType.USER);
+      expect(userEvent.actor.id).toBe('user-john');
+      expect(userEvent.action).toBe('sale.created');
+
+      expect(systemEvent.actor.type).toBe(ActorType.SYSTEM);
+      expect(serviceEvent.actor.type).toBe(ActorType.SERVICE);
+      expect(serviceEvent.actor.id).toBe('payment-gateway');
+
+      // 3. Verify we can prove WHEN it happened
+      expect(userEvent.timestamp).toBeInstanceOf(Date);
+      expect(systemEvent.timestamp).toBeInstanceOf(Date);
+      expect(serviceEvent.timestamp).toBeInstanceOf(Date);
+
+      // 4. Verify tenant context is preserved
+      expect(userEvent.tenantId).toBe('tenant-acme');
+      expect(systemEvent.tenantId).toBe('tenant-acme');
+      expect(serviceEvent.tenantId).toBe('tenant-acme');
+
+      // 5. Verify integrity is intact (no tampering)
+      const integrityResult = await auditService.verifyIntegrity('tenant-acme');
+      expect(integrityResult.intact).toBe(true);
+
+      // 6. Prove specific event with cryptographic proof
+      const proof = await auditService.proveEvent('tenant-acme', serviceEvent.eventId);
+      expect(proof).not.toBeNull();
+      expect(proof!.event.eventId).toBe(serviceEvent.eventId);
+      expect(proof!.hash).toBeDefined();
+      expect(proof!.hash.length).toBe(64); // SHA-256 produces 64 hex characters
+      expect(proof!.previousHash).toBeDefined(); // Links to previous event
+
+      // 7. Verify the proof is cryptographically valid
+      const { computeEventHash } = await import('./hash-utils');
+      const recomputedHash = computeEventHash(proof!.event, proof!.previousHash || undefined);
+      expect(recomputedHash).toBe(proof!.hash);
+    });
+
+    it('should detect tampering when audit log is modified', async () => {
+      // Create a custom storage that allows direct manipulation for testing
+      class TamperableStorage extends InMemoryAuditStorage {
+        private internalEvents: Map<string, { event: import('./types').AuditEvent; hash: string }> = new Map();
+        private internalEventsByTenant: Map<string, Array<{ event: import('./types').AuditEvent; hash: string }>> = new Map();
+
+        override async appendEvent(event: import('./types').AuditEvent, hash: string): Promise<import('./types').AuditEvent> {
+          const key = `${event.tenantId}:${event.eventId}`;
+          if (this.internalEvents.has(key)) {
+            throw new Error(`Event already exists: ${event.eventId}`);
+          }
+          const record = { event, hash };
+          this.internalEvents.set(key, record);
+          if (!this.internalEventsByTenant.has(event.tenantId)) {
+            this.internalEventsByTenant.set(event.tenantId, []);
+          }
+          this.internalEventsByTenant.get(event.tenantId)!.push(record);
+          return event;
+        }
+
+        override async getAllEvents(tenantId: string): Promise<Array<{ event: import('./types').AuditEvent; hash: string }>> {
+          const tenantEvents = this.internalEventsByTenant.get(tenantId) || [];
+          return [...tenantEvents].sort((a, b) =>
+            a.event.timestamp.getTime() - b.event.timestamp.getTime()
+          );
+        }
+
+        override async getEvent(tenantId: string, eventId: string): Promise<{ event: import('./types').AuditEvent; hash: string } | null> {
+          const key = `${tenantId}:${eventId}`;
+          return this.internalEvents.get(key) || null;
+        }
+
+        override async queryEvents(input: import('./types').QueryAuditEventsInput): Promise<import('./types').AuditEventQueryResult> {
+          const tenantEvents = this.internalEventsByTenant.get(input.tenantId) || [];
+          return {
+            events: tenantEvents.map(r => r.event),
+            total: tenantEvents.length,
+            hasMore: false,
+          };
+        }
+
+        override async getPreviousEventHash(tenantId: string): Promise<string | null> {
+          const tenantEvents = this.internalEventsByTenant.get(tenantId) || [];
+          if (tenantEvents.length === 0) return null;
+          return tenantEvents[tenantEvents.length - 1].hash;
+        }
+
+        // Tampering method - directly modify an event
+        tamperWithEvent(tenantId: string, eventId: string, newAction: string): void {
+          const key = `${tenantId}:${eventId}`;
+          const record = this.internalEvents.get(key);
+          if (record) {
+            // Modify the event without updating the hash (tampering!)
+            record.event.action = newAction;
+          }
+        }
+      }
+
+      const storage = new TamperableStorage();
+      const auditService = new AuditService({ storage });
+
+      // Log some events
+      const event1 = await auditService.logEvent({
+        tenantId: 'tenant-1',
+        actor: { type: ActorType.USER, id: 'user-1', tenantId: 'tenant-1' },
+        category: EventCategory.SECURITY,
+        severity: EventSeverity.INFO,
+        action: 'user.login',
+        outcome: 'success',
+      });
+
+      await auditService.logEvent({
+        tenantId: 'tenant-1',
+        actor: { type: ActorType.USER, id: 'user-1', tenantId: 'tenant-1' },
+        category: EventCategory.FINANCIAL,
+        severity: EventSeverity.INFO,
+        action: 'sale.created',
+        outcome: 'success',
+      });
+
+      // Verify integrity before tampering
+      const beforeTampering = await auditService.verifyIntegrity('tenant-1');
+      expect(beforeTampering.intact).toBe(true);
+
+      // Now tamper with the first event
+      storage.tamperWithEvent('tenant-1', event1.eventId, 'malicious.action');
+
+      // Verify integrity after tampering - should detect the modification
+      const afterTampering = await auditService.verifyIntegrity('tenant-1');
+      expect(afterTampering.intact).toBe(false);
+      expect(afterTampering.reason).toContain('Chain integrity broken');
+      expect(afterTampering.affectedEvents).toBeDefined();
+      expect(afterTampering.affectedEvents!.length).toBeGreaterThan(0);
+    });
+  });
+});
+
+describe('Hash Utilities', () => {
+  const createMockEvent = (overrides: Partial<AuditEvent> = {}): AuditEvent => ({
+    eventId: 'event-1',
+    tenantId: 'tenant-1',
+    timestamp: new Date('2026-01-18T12:00:00Z'),
+    actor: { type: ActorType.USER, id: 'user-1', tenantId: 'tenant-1' },
+    category: EventCategory.SECURITY,
+    severity: EventSeverity.INFO,
+    action: 'user.login',
+    outcome: 'success',
+    ...overrides,
+  });
+
+  describe('verifyEventHash', () => {
+    it('should return true for valid hash', () => {
+      const event = createMockEvent();
+      const hash = computeEventHash(event);
+      expect(verifyEventHash(event, hash)).toBe(true);
+    });
+
+    it('should return false for invalid hash', () => {
+      const event = createMockEvent();
+      expect(verifyEventHash(event, 'invalid-hash')).toBe(false);
+    });
+
+    it('should verify hash with previous hash', () => {
+      const event = createMockEvent();
+      const previousHash = 'abc123previoushash';
+      const hash = computeEventHash(event, previousHash);
+      expect(verifyEventHash(event, hash, previousHash)).toBe(true);
+    });
+  });
+
+  describe('computeChainHash', () => {
+    it('should compute hashes for a chain of events', () => {
+      const events = [
+        createMockEvent({ eventId: 'event-1' }),
+        createMockEvent({ eventId: 'event-2', timestamp: new Date('2026-01-18T12:01:00Z') }),
+        createMockEvent({ eventId: 'event-3', timestamp: new Date('2026-01-18T12:02:00Z') }),
+      ];
+
+      const hashes = computeChainHash(events);
+
+      expect(hashes).toHaveLength(3);
+      expect(hashes[0]).toBe(computeEventHash(events[0]));
+      expect(hashes[1]).toBe(computeEventHash(events[1], hashes[0]));
+      expect(hashes[2]).toBe(computeEventHash(events[2], hashes[1]));
+    });
+
+    it('should return empty array for empty events', () => {
+      const hashes = computeChainHash([]);
+      expect(hashes).toHaveLength(0);
+    });
+  });
+
+  describe('verifyChainIntegrity', () => {
+    it('should detect mismatched lengths', () => {
+      const events = [createMockEvent()];
+      const hashes = computeChainHash(events);
+
+      const result = verifyChainIntegrity(events, [...hashes, 'extra-hash']);
+      expect(result.intact).toBe(false);
+      expect(result.firstBrokenIndex).toBe(0);
+    });
+
+    it('should verify valid chain', () => {
+      const events = [
+        createMockEvent({ eventId: 'event-1' }),
+        createMockEvent({ eventId: 'event-2', timestamp: new Date('2026-01-18T12:01:00Z') }),
+      ];
+      const hashes = computeChainHash(events);
+
+      const result = verifyChainIntegrity(events, hashes);
+      expect(result.intact).toBe(true);
+    });
+
+    it('should detect corrupted hash in chain', () => {
+      const events = [
+        createMockEvent({ eventId: 'event-1' }),
+        createMockEvent({ eventId: 'event-2', timestamp: new Date('2026-01-18T12:01:00Z') }),
+      ];
+      const hashes = computeChainHash(events);
+      hashes[1] = 'corrupted-hash';
+
+      const result = verifyChainIntegrity(events, hashes);
+      expect(result.intact).toBe(false);
+      expect(result.firstBrokenIndex).toBe(1);
     });
   });
 });

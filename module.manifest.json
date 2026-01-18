@@ -5,6 +5,10 @@
   "type": "core",
   "description": "Audit logging and compliance tracking core service",
   "capabilities": [
+    "audit:log",
+    "audit:verify",
+    "audit:query",
+    "audit:prove",
     "immutable-audit-log",
     "tamper-detection",
     "actor-attribution",

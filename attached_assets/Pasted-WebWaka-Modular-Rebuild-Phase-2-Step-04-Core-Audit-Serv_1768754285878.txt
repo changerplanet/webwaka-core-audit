@@ -1,0 +1,216 @@
+WebWaka Modular Rebuild — Phase 2 / Step 04
+
+Core Audit Service Implementation
+
+Repository: changerplanet/webwaka-core-audit
+Implementation Platform: Replit (TypeScript-only project)
+Account: Replit-XX (dedicated to this repo)
+
+⸻
+
+CONTEXT (AUTHORITATIVE — READ FIRST)
+
+You are implementing Phase 2 — Step 04 of the WebWaka Modular Rebuild.
+
+This step implements the canonical Core Audit module for WebWaka.
+
+All governance, CI/CD, repo setup, and Vercel binding are already complete.
+
+You must clone the existing GitHub repository first, then implement strictly within it.
+
+⸻
+
+1. REPOSITORY & GIT RULES (MANDATORY)
+
+Repository
+	•	GitHub Repo: https://github.com/changerplanet/webwaka-core-audit
+	•	Repo is public
+	•	You MUST:
+	1.	Clone the repo first
+	2.	Work directly on main
+	3.	Push commits directly to main (branching not required here)
+
+Governance Constraints
+
+Do NOT delete or rename:
+	•	README.md
+	•	module.manifest.json
+	•	module.contract.md
+	•	CHANGELOG.md
+	•	OWNERS.md
+	•	SECURITY.md
+	•	.github/workflows/ci.yml
+
+You MAY update:
+	•	module.manifest.json
+	•	module.contract.md
+	•	CHANGELOG.md
+
+⸻
+
+2. TECH STACK (NON-NEGOTIABLE)
+	•	Language: TypeScript only
+	•	Project Type: Headless library (NO UI)
+	•	Frameworks: ❌ None (no React, no FastAPI)
+	•	Validation: Zod
+	•	Crypto: Node.js crypto (SHA-256)
+	•	Tests: Jest
+	•	Storage: Abstract interface only (no DB assumptions)
+
+⸻
+
+3. MODULE PURPOSE
+
+Implement a tenant-isolated, append-only, tamper-evident audit log system that:
+	•	Records who did what, when, under which tenant
+	•	Cannot be mutated silently
+	•	Can prove integrity
+	•	Can detect tampering
+	•	Is usable by:
+	•	POS
+	•	Payments
+	•	Receipts
+	•	Marketplace
+	•	Compliance modules later
+
+⸻
+
+4. FUNCTIONAL REQUIREMENTS
+
+4.1 Core Service
+
+Implement an AuditService class exposing at minimum:
+
+logEvent(input): Promise<AuditEvent>
+getEvent(tenantId, eventId): Promise<AuditEvent | null>
+queryEvents(input): Promise<AuditEventQueryResult>
+verifyIntegrity(tenantId): Promise<TamperDetectionResult>
+proveEvent(tenantId, eventId): Promise<AuditProof | null>
+
+4.2 Audit Event Model
+
+Each event MUST include:
+	•	eventId
+	•	tenantId
+	•	actor (user | system | service)
+	•	action
+	•	metadata
+	•	timestamp
+	•	hash
+	•	previousHash | null
+
+4.3 Cryptographic Integrity
+	•	Use SHA-256
+	•	Hash formula MUST include:
+
+hash = SHA256(eventPayload + previousHash)
+
+
+	•	Hash chain must be tenant-scoped
+
+⸻
+
+5. STORAGE ABSTRACTION (CRITICAL)
+
+Define an interface:
+
+interface AuditStorage {
+  append(event)
+  getById(tenantId, eventId)
+  query(tenantId, filters)
+  getLastHash(tenantId)
+}
+
+Provide:
+	•	InMemoryAuditStorage (for tests only)
+
+⸻
+
+6. TENANT ISOLATION RULES
+	•	Every method must require tenantId
+	•	No cross-tenant queries allowed
+	•	Integrity checks are tenant-scoped
+
+⸻
+
+7. OSS COMPLIANCE
+
+This implementation follows a hash-chained append-only audit log pattern, which is:
+	•	Industry-proven
+	•	Auditor-approved
+	•	OSS-safe
+	•	Infrastructure-free
+
+DO NOT introduce:
+	•	Databases
+	•	Message queues
+	•	External logging systems
+	•	Blockchain
+	•	SaaS dependencies
+
+⸻
+
+8. TESTING REQUIREMENTS (MANDATORY)
+
+You must implement comprehensive tests proving:
+	1.	Events append correctly
+	2.	Hash chaining is correct
+	3.	Tampering is detected
+	4.	Tenant isolation is enforced
+	5.	proveEvent() returns verifiable proof
+	6.	verifyIntegrity() fails if any event is mutated
+
+Target:
+	•	≥ 80% coverage
+	•	Tests must explicitly prove the hard stop condition
+
+⸻
+
+9. HARD STOP CONDITION (MUST BE PROVEN BY TEST)
+
+Any module can emit an audit event and later prove who did what, when, under which tenant context, and detect if the audit trail was tampered with.
+
+Include a test named similar to:
+
+"module can emit audit event and later cryptographically prove integrity"
+
+⸻
+
+10. DOCUMENTATION UPDATES
+
+Update:
+	•	module.contract.md → Public APIs & guarantees
+	•	CHANGELOG.md → Phase 2 / Step 04 entry
+	•	module.manifest.json →
+	•	Declare capabilities (e.g. audit:log, audit:verify)
+	•	Declare dependency on webwaka-core-identity
+
+⸻
+
+11. CI EXPECTATIONS
+	•	All tests must pass
+	•	CI must remain green
+	•	No skipped tests
+	•	No TODO placeholders
+
+⸻
+
+12. DELIVERY FORMAT
+
+When done, respond with:
+	1.	Completion Summary
+	2.	Public APIs
+	3.	Hard Stop Proof
+	4.	Test Coverage Stats
+	5.	Final Commit SHA
+	6.	Explicit STOP statement
+
+Example ending:
+
+STOP — Awaiting authorization for Phase 2 — Step 05 (Receipts)
+
+⸻
+
+🚫 DO NOT PROCEED BEYOND STEP 04
+
+Until explicit authorization is given.
