@@ -1,89 +1,45 @@
 # webwaka-core-audit
 
-**Type:** core  
-**Description:** Audit logging and compliance tracking core service
+**Operations, State & Compliance - Immutable audit logging**
+
+## Overview
+
+This repository is part of the WebWaka Core Substrate. It provides shared services for the WebWaka platform.
 
 ## Status
 
-✅ **Phase 2.3 Complete** - Core audit service implemented and tested.
+🚧 **Infrastructure Ready** - Implementation pending
 
-This module provides production-grade immutable audit logging with cryptographic tamper detection and strict tenant isolation.
+## Purpose
 
-## Features
+This is a **Core Module** in the WebWaka modular architecture:
 
-- **Immutable Audit Log**: Append-only storage with no updates or deletes
-- **Tamper Detection**: Cryptographic hash chaining (blockchain-like)
-- **Actor Attribution**: Track user, system, or service actions
-- **Event Categories**: Security, financial, administrative, data, system
-- **Integrity Verification**: Verify entire log or specific events
-- **Storage Abstraction**: Pluggable storage backends for flexibility
+- **Classification:** `core`
+- **Prefix:** `webwaka-core-`
+- **Type:** Headless TypeScript library
+- **Consumers:** Suite modules (POS, SVM, MVM, etc.)
 
-## Installation
+## Integration
 
-```bash
-pnpm install
-```
+This module will be consumed by Suite modules through npm package installation or monorepo workspace dependencies. It does not provide UI components—only business logic and data access interfaces.
 
-## Usage
+## Dependencies
 
-```typescript
-import { AuditService, InMemoryAuditStorage, ActorType, EventCategory, EventSeverity } from 'webwaka-core-audit';
+- `webwaka-core-registry` - Module registration and capability resolution
 
-// Create service instance
-const auditService = new AuditService({
-  storage: new InMemoryAuditStorage(),
-});
+## Development
 
-// Log a security event
-await auditService.logEvent({
-  tenantId: 'tenant-1',
-  actor: {
-    type: ActorType.USER,
-    id: 'user-1',
-    tenantId: 'tenant-1',
-  },
-  category: EventCategory.SECURITY,
-  severity: EventSeverity.INFO,
-  action: 'user.login',
-  outcome: 'success',
-  ipAddress: '192.168.1.1',
-});
+This repository follows WebWaka governance standards:
 
-// Query events
-const result = await auditService.queryEvents({
-  tenantId: 'tenant-1',
-  category: EventCategory.SECURITY,
-});
-
-// Verify integrity
-const integrity = await auditService.verifyIntegrity('tenant-1');
-console.log(integrity.intact); // true
-```
-
-## Testing
-
-```bash
-pnpm test
-```
-
-## Documentation
-
-- [Module Contract](./module.contract.md) - Defines the module's capabilities, dependencies, and API surface
-- [Changelog](./CHANGELOG.md) - Version history and changes
-- [Security Policy](./SECURITY.md) - Security guidelines and vulnerability reporting
-- [Owners](./OWNERS.md) - Maintainers and code review requirements
-
-## Module Manifest
-
-See `module.manifest.json` for the complete module specification.
-
-## Contributing
-
-This module follows the WebWaka architectural rules:
-- All changes must go through pull requests
-- CI/CD checks must pass before merging
-- Manifest validation is enforced automatically
+- All changes require PR review
+- CI must pass before merge
+- Main branch allows direct pushes (for now)
+- Automatic deployment via Vercel
 
 ## License
 
-MIT
+To be determined
+
+## Contact
+
+For questions or contributions, see OWNERS.md

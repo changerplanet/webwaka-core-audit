@@ -1,32 +1,16 @@
 {
-  "id": "webwaka-core-audit",
-  "name": "Core Audit",
-  "version": "0.1.0",
-  "type": "core",
-  "description": "Audit logging and compliance tracking core service",
-  "capabilities": [
-    "audit:log",
-    "audit:verify",
-    "audit:query",
-    "audit:prove",
-    "immutable-audit-log",
-    "tamper-detection",
-    "actor-attribution",
-    "event-categories",
-    "tenant-isolation"
-  ],
-  "dependencies": [
-    "webwaka-core-identity"
-  ],
-  "maintainers": [
-    {
-      "name": "ChangerPlanet Team",
-      "email": "changerplanet@gmail.com"
-    }
-  ],
-  "repository": {
-    "type": "git",
-    "url": "https://github.com/ChangerPlanet/webwaka-core-audit"
-  },
-  "license": "MIT"
+  "moduleId": "webwaka-core-audit",
+  "version": "0.0.0",
+  "class": "core",
+  "name": "Audit Core",
+  "description": "Operations, State & Compliance - Immutable audit logging",
+  "repository": "https://github.com/changerplanet/webwaka-core-audit",
+  "author": "WebWaka Team",
+  "license": "TBD",
+  "capabilities": [],
+  "dependencies": [],
+  "exports": {
+    "types": "./dist/index.d.ts",
+    "main": "./dist/index.js"
+  }
 }
